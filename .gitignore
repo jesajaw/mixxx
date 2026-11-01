@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+*.bak.*
+.DS_Store
+# lokale Musik/Datenbanken nie einchecken
+*.sqlite
+*.mp3
+*.flac
+*.m4a
+*.opus
+*.wav

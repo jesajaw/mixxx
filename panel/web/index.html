@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#07080b">
+<title>DJS Panel</title>
+<style>
+:root {
+  --bg: #07080b; --panel: #11141a; --panel2: #171b23; --edge: #2a303c; --edge2: #3a4252;
+  --text: #cfd6e6; --dim: #7c8598; --amber: #f2b36d; --violet: #9fb0ff; --mint: #7cf0c8; --red: #ff5468; --green: #6fe08a;
+  --k: clamp(40px, 8.2vh, 66px);      /* knob size */
+  --pad: clamp(6px, 1.2vh, 12px);
+  --btn: clamp(44px, 8vh, 64px);      /* minimum touch target */
+}
+:root:not([data-theme="dark"]) { color-scheme: dark; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+  font: 600 clamp(11px, 1.7vh, 14px)/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
+body { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--pad); padding: var(--pad); }
+.mono { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+
+/* ---------- top bar */
+#top { display: flex; align-items: center; gap: var(--pad); min-height: 34px; }
+#top h1 { font-size: 1.1em; margin: 0; letter-spacing: .14em; color: var(--amber); }
+#status { display: flex; align-items: center; gap: 8px; color: var(--dim); }
+#status i { width: 10px; height: 10px; border-radius: 50%; background: var(--red); display: inline-block; }
+#status.wait i { background: var(--amber); } #status.ok i { background: var(--green); }
+#top .sp { flex: 1; }
+
+/* ---------- generic controls */
+.btn { touch-action: none; display: flex; align-items: center; justify-content: center; text-align: center;
+  min-width: var(--btn); min-height: var(--btn); padding: 0 .6em; border-radius: 10px; cursor: pointer;
+  background: linear-gradient(#222733, #181c25); border: 1px solid var(--edge2); color: var(--text); letter-spacing: .06em; }
+.btn.down { background: #2d3442; transform: translateY(1px); border-color: var(--amber); }
+.btn.lit { border-color: var(--amber); color: #1b1305; background: linear-gradient(#ffd08e, var(--amber)); box-shadow: 0 0 14px #f2b36d55; }
+.btn.small { min-height: calc(var(--btn) * .8); font-size: .92em; }
+.btn.play.lit { background: linear-gradient(#a4ffe0, var(--mint)); border-color: var(--mint); box-shadow: 0 0 14px #7cf0c855; }
+.btn.cue { color: var(--amber); }
+.btn.cue.lit { color: #1b1305; }
+body.shift .pad { border-color: var(--red); color: var(--red); }
+body.shift .pad.lit { background: linear-gradient(#ff98a4, var(--red)); color: #200; }
+#shift.on { background: linear-gradient(#ff98a4, var(--red)); color: #200; border-color: var(--red); }
+.deck.d2 .btn.lit:not(.play) { border-color: var(--violet); background: linear-gradient(#d8e0ff, var(--violet)); box-shadow: 0 0 14px #9fb0ff55; }
+
+.fader { touch-action: none; position: relative; border-radius: 10px; background: var(--panel); border: 1px solid var(--edge); }
+.fader.v { width: calc(var(--btn) * 1.1); height: 100%; min-height: 120px; }
+.fader.h { height: calc(var(--btn) * 1.1); width: 100%; }
+.fader .track { position: absolute; background: #05060a; border-radius: 4px; }
+.fader.v .track { left: 50%; width: 6px; top: 12px; bottom: 12px; transform: translateX(-50%); }
+.fader.h .track { top: 50%; height: 6px; left: 12px; right: 12px; transform: translateY(-50%); }
+.fader .ticks { position: absolute; inset: 0; pointer-events: none; opacity: .5;
+  background: repeating-linear-gradient(to bottom, transparent 0 calc(10% - 1px), var(--edge2) calc(10% - 1px) 10%); }
+.fader.h .ticks { background: repeating-linear-gradient(to right, transparent 0 calc(10% - 1px), var(--edge2) calc(10% - 1px) 10%); }
+.fader .cap { position: absolute; pointer-events: none; background: linear-gradient(#4a5366, #2a303c); border: 1px solid #6c778c; border-radius: 6px; }
+.fader.v .cap { left: 8%; right: 8%; height: calc(var(--btn) * .9); margin-bottom: calc(var(--btn) * -.45); }
+.fader.h .cap { top: 8%; bottom: 8%; width: calc(var(--btn) * .9); margin-left: calc(var(--btn) * -.45); }
+.fader .cap::after { content: ""; position: absolute; background: var(--amber); }
+.fader.v .cap::after { left: 8%; right: 8%; top: 50%; height: 2px; }
+.fader.h .cap::after { top: 8%; bottom: 8%; left: 50%; width: 2px; }
+.fader.active { border-color: var(--amber); }
+
+.knobwrap { display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--dim); }
+.knob { touch-action: none; width: var(--k); height: var(--k); border-radius: 50%; position: relative;
+  background: radial-gradient(circle at 35% 30%, #3a4152, #151922 70%); border: 1px solid var(--edge2); }
+.knob i { position: absolute; left: 50%; top: 50%; width: 3px; height: 42%; margin-left: -1.5px; transform-origin: 50% 0;
+  background: var(--amber); border-radius: 2px; }
+.knob.active { border-color: var(--amber); }
+.deck.d2 .knob i { background: var(--violet); }
+
+/* ---------- decks */
+.deck, .mixer { background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: var(--pad);
+  display: grid; gap: var(--pad); min-height: 0; }
+.deck { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
+.info { display: grid; grid-template-columns: auto 1fr auto; gap: var(--pad); align-items: center; }
+.info .bpm { font-size: 1.9em; color: var(--amber); } .deck.d2 .info .bpm { color: var(--violet); }
+.info .bpm small { font-size: .45em; color: var(--dim); margin-left: 4px; }
+.info .time { font-size: 1.5em; text-align: right; }
+.progress { grid-column: 1 / -1; height: 8px; background: #05060a; border-radius: 4px; overflow: hidden; }
+.progress b { display: block; height: 100%; width: 0; background: var(--mint); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--edge2); display: inline-block; margin-right: 6px; }
+.dot.on { background: var(--mint); }
+
+.mid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--pad); min-height: 0; }
+.jogbox { display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; container-type: size; }
+.jog { touch-action: none; position: relative; aspect-ratio: 1; height: min(100cqh, 100cqw); border-radius: 50%;
+  background: radial-gradient(circle, #1b1f29 0 62%, #0d1016 63% 100%); border: 2px solid var(--edge2); }
+.jog .ring { position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: repeating-conic-gradient(from 0deg, #2a303c 0 1deg, transparent 1deg 6deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 74%, #000 75%); mask: radial-gradient(circle, transparent 0 74%, #000 75%); }
+.jog .plat { position: absolute; inset: 14%; border-radius: 50%; pointer-events: none; border: 1px solid var(--edge2);
+  background: conic-gradient(from 0deg, #222733, #14171e, #222733, #14171e, #222733); }
+.jog .mark { position: absolute; left: 50%; top: 14%; width: 4px; height: 20%; margin-left: -2px; background: var(--amber);
+  border-radius: 2px; transform-origin: 50% 180%; pointer-events: none; }
+.deck.d2 .jog .mark { background: var(--violet); }
+.jog .label { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; color: var(--dim);
+  font-size: .85em; letter-spacing: .2em; }
+.jog.on-plat { border-color: var(--amber); } .jog.on-ring { border-color: var(--mint); }
+.pitch { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; justify-items: center; min-height: 0; }
+.pitch .lbl { color: var(--dim); font-size: .8em; }
+
+.transport { display: grid; grid-template-columns: 1.3fr 1.3fr 1fr 1fr 1fr; gap: var(--pad); }
+.pads { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--pad); }
+.loops { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--pad); }
+.btn.pad { min-height: calc(var(--btn) * 1.05); }
+
+/* ---------- mixer */
+.mixer { grid-template-rows: auto minmax(0, 1fr) auto; }
+.master { display: flex; justify-content: space-around; }
+.strips { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pad); min-height: 0; }
+.strip { display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: auto auto minmax(0, 1fr); gap: calc(var(--pad) * .6) 2px;
+  justify-items: center; align-items: start; min-height: 0; --k: clamp(30px, 5.3vh, 44px); }
+.strip .knobwrap:nth-child(-n+2) { grid-column: span 3; }
+.strip .knobwrap:nth-child(n+3):nth-child(-n+5) { grid-column: span 2; }
+.strip .vols { grid-column: 1 / -1; align-self: stretch; }
+.strip .vols { display: flex; gap: 8px; min-height: 0; width: 100%; justify-content: center; }
+.meter { width: 10px; background: #05060a; border-radius: 3px; position: relative; overflow: hidden; align-self: stretch; margin: 12px 0; }
+.meter b { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: linear-gradient(to top, var(--green) 0 60%, var(--amber) 60% 85%, var(--red) 85%); }
+
+/* ---------- library bar */
+#lib { display: grid; grid-template-columns: auto auto minmax(80px, 1fr) auto auto auto auto auto; gap: var(--pad); align-items: stretch; }
+#browse { touch-action: none; min-height: var(--btn); border-radius: 10px; background: var(--panel); border: 1px solid var(--edge);
+  display: flex; align-items: center; justify-content: center; color: var(--dim); letter-spacing: .12em; position: relative; overflow: hidden; }
+#browse.active { border-color: var(--mint); }
+#browse::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(to bottom, transparent 0 10px, #ffffff0a 10px 11px); }
+
+#rotate { display: none; position: fixed; inset: 0; z-index: 10; background: var(--bg); place-items: center; text-align: center; padding: 2em; font-size: 1.4em; }
+@media (orientation: portrait) and (max-aspect-ratio: 4/5) { #rotate { display: grid; } }
+</style>
+</head>
+<body>
+<div id="top">
+  <h1>DJS PANEL</h1>
+  <div id="status"><i></i><span>connecting ...</span></div>
+  <div class="sp"></div>
+  <div class="btn small" id="shift" role="button">SHIFT</div>
+  <div class="btn small" id="full" role="button">FULLSCREEN</div>
+</div>
+<div id="main" style="display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,.8fr) minmax(0,1.25fr);gap:var(--pad);min-height:0"></div>
+<div id="lib"></div>
+<div id="rotate">Please turn the tablet to landscape.</div>
+
+<script>
+"use strict";
+/* ============================================================ connection */
+const widgets = {};            // control id -> widget (feedback handler)
+const last = {};               // control id -> last value reported by Mixxx
+let sock = null, backoff = 400, gotFeedback = false, openTimer = 0;
+const statusEl = document.getElementById("status");
+
+function setStatus(kind, text) { statusEl.className = kind; statusEl.querySelector("span").textContent = text; }
+
+function send(id, v) {
+  if (sock && sock.readyState === 1) sock.send(JSON.stringify({ id: id, v: Math.round(v) }));
+}
+
+function connect() {
+  setStatus("", "connecting ...");
+  sock = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  sock.onopen = () => {
+    backoff = 400; gotFeedback = false;
+    setStatus("wait", "server connected - waiting for Mixxx");
+  };
+  sock.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+    if (!gotFeedback) { gotFeedback = true; setStatus("ok", "connected to Mixxx"); }
+    last[m.id] = m.v;
+    const w = widgets[m.id];
+    if (w && w.feedback) w.feedback(m.v);
+    if (m.id.endsWith(".pos") || m.id.endsWith(".dur")) updateTime(m.id.split(".")[0]);
+  };
+  sock.onclose = () => { setStatus("", "disconnected - retrying"); setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 5000); };
+  sock.onerror = () => { try { sock.close(); } catch (e) {} };
+}
+
+/* ============================================================ helpers */
+function h(tag, cls, text, attrs) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+
+/* A value that is sent at most once per animation frame while dragging. */
+function frameSender(id) {
+  let pending = null, queued = false;
+  return {
+    set(v) { pending = v; if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; if (pending !== null) { send(id, pending); pending = null; } }); } },
+    flush() { if (pending !== null) { send(id, pending); pending = null; } },
+  };
+}
+
+/* ============================================================ widgets */
+function button(id, label, cls) {
+  const n = h("div", "btn " + (cls || ""), label, { role: "button", "data-id": id });
+  let down = false;
+  n.addEventListener("pointerdown", (e) => {
+    if (down) return; down = true; n.setPointerCapture(e.pointerId); n.classList.add("down"); send(id, 127); e.preventDefault();
+  });
+  const up = () => { if (!down) return; down = false; n.classList.remove("down"); send(id, 0); };
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((t) => n.addEventListener(t, up));
+  widgets[id] = { feedback: (v) => n.classList.toggle("lit", v > 0) };
+  return n;
+}
+
+function fader(id, o) {      // o: {bits, horizontal, def}
+  const max = o.bits === 14 ? 16383 : 127;
+  const n = h("div", "fader " + (o.horizontal ? "h" : "v"), null, { "data-id": id });
+  const cap = h("div", "cap");
+  n.append(h("div", "track"), h("div", "ticks"), cap);
+  let value = o.def != null ? o.def : 0, touching = false, startPos = 0, startVal = 0, len = 1, lastTap = 0;
+  const out = frameSender(id);
+  const render = () => { cap.style[o.horizontal ? "left" : "bottom"] = (value / max * 100) + "%"; };
+  n.addEventListener("pointerdown", (e) => {
+    n.setPointerCapture(e.pointerId); touching = true; n.classList.add("active"); e.preventDefault();
+    const r = n.getBoundingClientRect();
+    len = Math.max(1, (o.horizontal ? r.width : r.height) - 24);
+    startPos = o.horizontal ? e.clientX : e.clientY; startVal = value;
+    const now = performance.now();
+    if (o.def != null && now - lastTap < 300) { value = o.def; render(); out.set(value); out.flush(); }
+    lastTap = now;
+  });
+  n.addEventListener("pointermove", (e) => {
+    if (!touching) return;
+    const d = o.horizontal ? (e.clientX - startPos) / len : -(e.clientY - startPos) / len;
+    value = clamp(Math.round(startVal + d * max), 0, max); render(); out.set(value);
+  });
+  const up = () => { if (!touching) return; touching = false; n.classList.remove("active"); out.flush(); };
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((t) => n.addEventListener(t, up));
+  widgets[id] = { feedback: (v) => { if (!touching) { value = v; render(); } } };
+  render();
+  return n;
+}
+
+function knob(id, label, def) {
+  const wrap = h("div", "knobwrap");
+  const n = h("div", "knob", null, { "data-id": id });
+  const needle = h("i"); n.append(needle);
+  wrap.append(n, h("span", null, label));
+  let value = def != null ? def : 0, touching = false, startY = 0, startVal = 0, lastTap = 0;
+  const out = frameSender(id);
+  const render = () => { needle.style.transform = "rotate(" + (180 + (value / 127 * 270 - 135)) + "deg)"; };
+  n.addEventListener("pointerdown", (e) => {
+    n.setPointerCapture(e.pointerId); touching = true; n.classList.add("active"); e.preventDefault();
+    startY = e.clientY; startVal = value;
+    const now = performance.now();
+    if (def != null && now - lastTap < 300) { value = def; render(); out.set(value); out.flush(); }
+    lastTap = now;
+  });
+  n.addEventListener("pointermove", (e) => {
+    if (!touching) return;
+    value = clamp(Math.round(startVal + (startY - e.clientY) / 160 * 127), 0, 127); render(); out.set(value);
+  });
+  const up = () => { if (!touching) return; touching = false; n.classList.remove("active"); out.flush(); };
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((t) => n.addEventListener(t, up));
+  widgets[id] = { feedback: (v) => { if (!touching) { value = v; render(); } } };
+  render();
+  return wrap;
+}
+
+function meter(id) {
+  const n = h("div", "meter", null, { "data-id": id }), bar = h("b"); n.append(bar);
+  widgets[id] = { feedback: (v) => { bar.style.height = (v / 127 * 100) + "%"; } };
+  return n;
+}
+
+/* Jog wheel: finger on the platter = scratch, finger on the outer ring = nudge. */
+function jog(deck) {
+  const id = "d" + deck + ".jog", touchId = id + "_touch", nudgeId = "d" + deck + ".nudge";
+  const n = h("div", "jog", null, { "data-id": id });
+  const mark = h("div", "mark");
+  n.append(h("div", "ring"), h("div", "plat"), mark, h("div", "label", "SCRATCH"));
+  let mode = null, prevAngle = 0, acc = 0, angle = 0, queued = false;
+  const TICKS = 1024;
+  const flush = () => {
+    queued = false;
+    const per = mode === "ring" ? TICKS / 6 : TICKS;        // ring: a gentler scale
+    let ticks = Math.trunc(acc / (2 * Math.PI) * per);
+    if (!ticks) return;
+    acc -= ticks / per * 2 * Math.PI;
+    ticks = clamp(ticks, -63, 63);
+    send(mode === "ring" ? nudgeId : id, ticks);
+  };
+  const pointAngle = (e) => { const r = n.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)); };
+  n.addEventListener("pointerdown", (e) => {
+    if (mode) return;
+    const r = n.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    mode = Math.hypot(dx, dy) > r.width / 2 * 0.74 ? "ring" : "plat";
+    n.setPointerCapture(e.pointerId); n.classList.add(mode === "ring" ? "on-ring" : "on-plat"); e.preventDefault();
+    prevAngle = pointAngle(e); acc = 0;
+    if (mode === "plat") send(touchId, 127);
+  });
+  n.addEventListener("pointermove", (e) => {
+    if (!mode) return;
+    const a = pointAngle(e); let d = a - prevAngle; prevAngle = a;
+    if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
+    acc += d; angle += d * 180 / Math.PI; mark.style.transform = "rotate(" + angle + "deg)";
+    if (!queued) { queued = true; requestAnimationFrame(flush); }
+  });
+  const up = () => {
+    if (!mode) return;
+    flush(); if (mode === "plat") send(touchId, 0);
+    n.classList.remove("on-ring", "on-plat"); mode = null;
+  };
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((t) => n.addEventListener(t, up));
+  widgets[id] = {};
+  widgets[touchId] = {};
+  widgets[nudgeId] = {};
+  return { node: n, spin(deg) { if (!mode) { angle = deg; mark.style.transform = "rotate(" + deg + "deg)"; } } };
+}
+
+const jogs = {};
+function updateTime(p) {          // p = "d1" / "d2"
+  const pos = (last[p + ".pos"] || 0) / 16383, dur = last[p + ".dur"] || 0;
+  const t = document.querySelector("[data-view='" + p + ".time']");
+  if (t) {
+    const rem = Math.max(0, Math.ceil(dur * (1 - pos))), m = Math.floor(rem / 60), s = rem % 60;
+    t.textContent = dur > 0 ? "-" + m + ":" + String(s).padStart(2, "0") : "--:--";
+  }
+  const bar = document.querySelector("[data-id='" + p + ".pos']");
+  if (bar) bar.firstChild.style.width = (pos * 100) + "%";
+  if (jogs[p]) jogs[p].spin(((pos * dur) / 1.8 * 360) % 360);     // 33 1/3 rpm = one turn per 1.8 s
+}
+
+/* ============================================================ layout */
+function deckPane(d) {
+  const p = "d" + d + ".";
+  const pane = h("section", "deck d" + d);
+  // info
+  const info = h("div", "info");
+  const loaded = h("div", null, null, { "data-id": p + "loaded" }); loaded.append(h("span", "dot"), h("span", null, "DECK " + d));
+  widgets[p + "loaded"] = { feedback: (v) => loaded.firstChild.classList.toggle("on", v > 0) };
+  const bpm = h("div", "bpm mono", null, { "data-id": p + "bpm" });
+  const bpmText = document.createTextNode("---"); bpm.append(bpmText, h("small", null, "BPM"));
+  widgets[p + "bpm"] = { feedback: (v) => { bpmText.textContent = v > 0 ? (v / 10).toFixed(1) : "---"; } };
+  const time = h("div", "time mono", "--:--", { "data-view": p + "time" });
+  const prog = h("div", "progress", null, { "data-id": p + "pos" }); prog.append(h("b"));
+  widgets[p + "pos"] = {}; widgets[p + "dur"] = {};
+  info.append(loaded, bpm, time, prog);
+  // jog + pitch
+  jogs["d" + d] = jog(d);
+  const jogbox = h("div", "jogbox"); jogbox.append(jogs["d" + d].node);
+  const pitch = h("div", "pitch");
+  pitch.append(button(p + "bend_up", "+", "small"), fader(p + "rate", { bits: 14, def: 8192 }), button(p + "bend_down", "-", "small"));
+  const mid = h("div", "mid"); mid.append(jogbox, pitch);
+  // transport
+  const tr = h("div", "transport");
+  tr.append(button(p + "cue", "CUE", "cue"), button(p + "play", "PLAY", "play"), button(p + "sync", "SYNC"),
+            button(p + "pfl", "HEAD"), button(p + "keylock", "KEY"));
+  // pads
+  const pads = h("div", "pads");
+  for (let i = 1; i <= 4; i++) pads.append(button(p + "hotcue" + i, String(i), "pad"));
+  // loops
+  const lp = h("div", "loops");
+  lp.append(button(p + "loop_in", "IN", "small"), button(p + "loop_out", "OUT", "small"), button(p + "reloop", "LOOP", "small"),
+            button(p + "loop4", "4", "small"), button(p + "loop_halve", "1/2", "small"), button(p + "loop_double", "x2", "small"));
+  pane.append(info, mid, tr, pads, lp);
+  return pane;
+}
+
+function strip(d) {
+  const p = "d" + d + ".";
+  const s = h("div", "strip");
+  s.append(knob(p + "gain", "GAIN"), knob(p + "filter", "FILTER", 64), knob(p + "eq_hi", "HI", 64),
+           knob(p + "eq_mid", "MID", 64), knob(p + "eq_lo", "LO", 64));
+  const v = h("div", "vols"); v.append(meter(p + "vu"), fader(p + "vol", { bits: 7 }));
+  s.append(v);
+  return s;
+}
+
+function build() {
+  const main = document.getElementById("main");
+  const mixer = h("section", "mixer");
+  const master = h("div", "master");
+  master.append(knob("main_gain", "MAIN"), knob("cue_mix", "CUE/MAIN", 64), knob("head_gain", "PHONES"));
+  const strips = h("div", "strips"); strips.append(strip(1), strip(2));
+  mixer.append(master, strips, fader("xfader", { bits: 7, horizontal: true, def: 64 }));
+  main.append(deckPane(1), mixer, deckPane(2));
+
+  // library bar
+  const lib = document.getElementById("lib");
+  const browse = h("div", "", "BROWSE LIBRARY", { id: "browse", "data-id": "lib" });
+  let acc = 0, startY = 0, active = false;
+  browse.addEventListener("pointerdown", (e) => { active = true; startY = e.clientY; acc = 0; browse.setPointerCapture(e.pointerId); browse.classList.add("active"); e.preventDefault(); });
+  browse.addEventListener("pointermove", (e) => {
+    if (!active) return;
+    acc += e.clientY - startY; startY = e.clientY;
+    const rows = Math.trunc(acc / 26);
+    if (rows) { acc -= rows * 26; send("lib", clamp(rows, -63, 63)); }
+  });
+  const bup = () => { active = false; browse.classList.remove("active"); };
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((t) => browse.addEventListener(t, bup));
+  widgets["lib"] = {};
+  lib.append(button("d1.load", "LOAD  1"), button("lib_up", "UP"), browse, button("lib_down", "DOWN"), button("d2.load", "LOAD  2"),
+             button("autodj", "AUTO DJ"), button("autodj_fade", "FADE"), button("autodj_skip", "SKIP"));
+}
+
+/* ============================================================ top bar */
+function setup() {
+  build();
+  // SHIFT is latching: tap = on, tap again = off. While on, the hotcue pads delete cues.
+  const shift = document.getElementById("shift");
+  shift.dataset.id = "shift";
+  shift.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const on = !shift.classList.contains("on");
+    shift.classList.toggle("on", on); document.body.classList.toggle("shift", on); send("shift", on ? 127 : 0);
+  });
+  widgets["shift"] = {};
+  const full = document.getElementById("full");
+  full.addEventListener("pointerdown", async (e) => {
+    e.preventDefault();
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else { await document.documentElement.requestFullscreen(); if (navigator.wakeLock) navigator.wakeLock.request("screen").catch(() => {}); }
+    } catch (err) { /* fullscreen not allowed here */ }
+  });
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+  connect();
+}
+setup();
+</script>
+</body>
+</html>

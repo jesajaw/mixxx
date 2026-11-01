@@ -1,0 +1,28 @@
+# Spotify Connect receiver "DJ Deck" as a systemd user service (example, optional)
+#
+# Idea: instead of redirecting the Spotify app/browser by hand, a device called
+# "DJ Deck" shows up in the Spotify app. Selecting it sends the audio straight into the
+# virtual sink dj_stream (see dj-stream.sh) -> Mixxx Auxiliary.
+#
+# Requirements / caveats:
+#   * Spotify Premium (Connect playback)
+#   * librespot is an unofficial client; login methods and flags change from time to time
+#     -> check the README of the current librespot release (zeroconf / OAuth login)
+#   * Install it e.g. via your distribution or cargo; adjust the path in ExecStart
+#
+# Installation:
+#   mkdir -p ~/.config/systemd/user && cp librespot-deck.service ~/.config/systemd/user/
+#   ./dj-stream.sh up
+#   systemctl --user daemon-reload && systemctl --user enable --now librespot-deck
+[Unit]
+Description=Spotify Connect "DJ Deck" -> dj_stream
+After=pipewire-pulse.service pulseaudio.service network-online.target
+
+[Service]
+Environment=PULSE_SINK=dj_stream
+ExecStart=/usr/bin/librespot --name "DJ Deck" --backend pulseaudio --bitrate 320 --disable-audio-cache
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

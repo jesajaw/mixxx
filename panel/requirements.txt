@@ -1,0 +1,2 @@
+# only needed for real MIDI (the server also runs with --dry-run without it)
+python-rtmidi

@@ -1,0 +1,9 @@
+{
+  "_comment": "Palette for the Studio scheme. After changes run: python3 tools/make_scheme.py",
+  "chassis_hue": 228,
+  "chassis_saturation": 0.22,
+  "accent_from_range": [165, 215],
+  "accent_hue": 262,
+  "accent_saturation_cap": 0.62,
+  "accent_lightness_boost": 0.05
+}
