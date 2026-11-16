@@ -34,6 +34,10 @@ def build_js():
         f"DJSPanel.NOTE_ON_OUT = {P.NOTE_ON_OUT};  // 0x{P.NOTE_ON_OUT:02X}\n"
         f"DJSPanel.CC_OUT = {P.CC_OUT};       // 0x{P.CC_OUT:02X}\n"
         f"DJSPanel.JOG_TICKS_PER_REV = {P.JOG_TICKS_PER_REV};\n"
+        f"DJSPanel.MAX7 = {P.MAX7};\n"
+        f"DJSPanel.MAX14 = {P.MAX14};\n"
+        f"DJSPanel.REL_CENTER = {P.REL_CENTER};\n"
+        f"DJSPanel.SCRATCH_RPM = {P.SCRATCH_RPM!r};   // 33 1/3\n"
     )
     text = TEMPLATE.read_text(encoding="utf8")
     table = json.dumps(_table(), indent=1, sort_keys=True)

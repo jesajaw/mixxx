@@ -3,6 +3,8 @@ import asyncio
 import base64
 import json
 import os
+import re
+import socket
 import struct
 import subprocess
 import sys
@@ -274,6 +276,114 @@ class Network(unittest.TestCase):
 
         with RunningServer() as rs:
             asyncio.run(scenario(rs))
+
+    def test_protocol_json_serves_the_shared_constants(self):
+        with RunningServer() as rs:
+            resp = asyncio.run(_http(rs.port, "GET /protocol.json HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"))
+            head, body = resp.split("\r\n\r\n", 1)
+            self.assertIn("200 OK", head.split("\r\n")[0])
+            self.assertIn("application/json", head)
+            self.assertEqual(json.loads(body), {"ui": P.ui_constants()})
+
+    def test_screen_that_stops_reading_is_dropped_and_the_others_keep_working(self):
+        async def scenario(rs):
+            rs.server.max_client_buffer = 16 * 1024
+            slow_r, slow_w, _ = await _connect(rs.port)               # reads the welcome, then never again
+            slow_w.get_extra_info("socket").setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+            good_r, good_w, _ = await _connect(rs.port)
+            received = [0]
+
+            async def drain():                                        # a healthy screen keeps reading
+                while True:
+                    chunk = await good_r.read(65536)
+                    if not chunk:
+                        return
+                    received[0] += len(chunk)
+
+            reader = asyncio.ensure_future(drain())
+            await asyncio.sleep(0.1)
+            vu = P.BY_ID["d1.vu"]["num"]
+            sent = 0
+            while not rs.server.dropped and sent < 1_500_000:        # fill the kernel buffers, then ours
+                for i in range(5000):
+                    rs.midi.inject(bytes([0xB1, vu, 1 + i % 126]))
+                sent += 5000
+                await asyncio.sleep(0.01)
+            await asyncio.sleep(0.2)
+            self.assertEqual(rs.server.dropped, 1, f"slow screen was not dropped after {sent} frames")
+            self.assertEqual(len(rs.server.clients), 1)               # only the healthy one is left
+            before = received[0]
+            for _ in range(10):
+                rs.midi.inject(bytes([0xB1, vu, 77]))
+            await asyncio.sleep(0.3)
+            self.assertGreater(received[0], before, "healthy screen stopped receiving")
+            try:                                                      # the dropped connection is really closed
+                await asyncio.wait_for(slow_r.read(), 10)
+            except ConnectionError:
+                pass
+            reader.cancel()
+            good_w.close()
+
+        with RunningServer() as rs:
+            asyncio.run(scenario(rs))
+
+    def test_silent_screen_is_dropped_after_the_ping_timeout(self):
+        async def scenario(rs):
+            rs.server.ping_interval, rs.server.ping_timeout = 0.1, 0.2
+            r, w, _ = await _connect(rs.port)
+            op, _ = await asyncio.wait_for(_read_frame(r), 5)
+            self.assertEqual(op, 0x9)                                 # the server pings
+            await asyncio.wait_for(r.read(), 5)                       # ... and, unanswered, hangs up
+            self.assertEqual(rs.server.dropped, 1)
+            self.assertEqual(len(rs.server.clients), 0)
+            w.close()
+
+        with RunningServer() as rs:
+            asyncio.run(scenario(rs))
+
+    def test_screen_that_answers_pings_stays_connected(self):
+        async def scenario(rs):
+            rs.server.ping_interval, rs.server.ping_timeout = 0.1, 0.2
+            r, w, _ = await _connect(rs.port)
+            for _ in range(8):                                        # far longer than interval + timeout
+                op, payload = await asyncio.wait_for(_read_frame(r), 5)
+                self.assertEqual(op, 0x9)
+                w.write(_frame(0xA, payload))
+                await w.drain()
+            self.assertEqual((rs.server.dropped, len(rs.server.clients)), (0, 1))
+            w.close()
+
+        with RunningServer() as rs:
+            asyncio.run(scenario(rs))
+
+
+class SingleSource(unittest.TestCase):
+    """Protocol numbers live in panel/protocol.py only (see the constants block there)."""
+
+    LITERALS = ("127", "16383", "8192", "1024", "64", "63")
+
+    def _assert_none(self, text, where):
+        for lit in self.LITERALS:
+            m = re.search(rf"(?<![\w.#]){lit}(?![\w.%])", text)
+            self.assertIsNone(m, f"hard-coded {lit} in {where}: ...{text[max(0, (m.start() if m else 0) - 40):(m.end() if m else 0) + 20]!r}")
+
+    def test_ui_script_has_no_hard_coded_protocol_numbers(self):
+        html = (ROOT / "panel" / "web" / "index.html").read_text(encoding="utf8")
+        script = html[html.index("<script>"):]
+        self._assert_none(re.sub(r"/\*.*?\*/", "", script, flags=re.S), "panel/web/index.html")
+        self.assertNotIn("/ 1.8", script)
+
+    def test_mixxx_script_template_has_no_hard_coded_protocol_numbers(self):
+        text = (ROOT / "panel" / "mapping.template.js").read_text(encoding="utf8")
+        self._assert_none(re.sub(r"//.*", "", text), "panel/mapping.template.js")
+        self.assertNotIn("33 + 1 / 3", text)
+
+    def test_server_has_no_hard_coded_protocol_numbers(self):
+        text = (ROOT / "panel" / "server.py").read_text(encoding="utf8")
+        code = re.sub(r"#.*|\"\"\"[\s\S]*?\"\"\"|\"[^\"\n]*\"", "", text)       # no comments, docstrings or string literals
+        code = re.sub(r"\b\d+ \* 1024\b", "", code)                                # byte sizes (MAX_HEAD ...) are not protocol numbers
+        for lit in ("16383", "8192", "1024", "63"):
+            self.assertIsNone(re.search(rf"(?<![\w.]){lit}(?![\w.])", code), lit)
 
 
 class GeneratedMapping(unittest.TestCase):

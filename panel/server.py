@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """DJS touch panel server: browser touch UI  <->  virtual MIDI port  <->  Mixxx.
 
-  pip install python-rtmidi          (only needed for real MIDI; --dry-run works without it)
-  python3 panel/server.py            then open the printed address on the tablet / on this PC
+  make run        Mixxx + this server together (installed by make install)
+  make panel      only the server  (needs python-rtmidi: make venv;  --dry-run works without it)
 
-Windows: create a loopMIDI port called "DJS Panel" first (https://www.tobias-erichsen.de/software/loopmidi.html).
-Linux/macOS: the port is created automatically if it does not exist.
-In Mixxx: Preferences > Controllers > "DJS Panel" > load mapping "DJS Touch Panel", enable.
+The server creates the virtual ALSA MIDI port "DJS Panel" itself (so start it before Mixxx, or rescan the controllers).
+In Mixxx: Preferences > Controllers > "DJS Panel" > load mapping "DJS Touch Panel", enable (once).
 Details: docs/PANEL.md.
 
 Only the Python standard library is used for HTTP and WebSocket.
@@ -16,14 +15,18 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
 import socket
 import struct
 import sys
+import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import launcher  # noqa: E402
+import mixxxenv  # noqa: E402
 import protocol as P  # noqa: E402
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -31,6 +34,11 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_HEAD = 16 * 1024
 MAX_FRAME = 64 * 1024
 DEFAULT_PORT_NAME = "DJS Panel"
+# A tablet that went to sleep or left the Wi-Fi may stay "connected" for many minutes. Such a client must not make
+# the server queue frames for it forever (and, with CPython 3.12 asyncio, get slower with every queued frame).
+MAX_CLIENT_BUFFER = 64 * 1024     # bytes queued for one screen; above this it is dropped (it reconnects + resyncs)
+PING_INTERVAL = 15.0              # seconds between WebSocket pings
+PING_TIMEOUT = 10.0               # a screen that answers nothing for interval + timeout is dropped
 
 
 # ------------------------------------------------------------------ WebSocket (RFC 6455, text frames only)
@@ -123,15 +131,15 @@ class Panel:
             return []
         kind, num = c["kind"], c["num"]
         if kind == "button":
-            return [bytes([status, num, 127 if v else 0])]
+            return [bytes([status, num, P.MAX7 if v else 0])]
         if kind == "abs7":
-            return [bytes([status, num, self._clamp(v, 0, 127)])]
+            return [bytes([status, num, self._clamp(v, 0, P.MAX7)])]
         if kind == "abs14":
-            v = self._clamp(v, 0, 16383)
+            v = self._clamp(v, 0, P.MAX14)
             return [bytes([status, num, v >> 7]), bytes([status, num + 32, v & 0x7F])]
         if kind == "rel":
-            v = self._clamp(v, -63, 63)
-            return [bytes([status, num, 64 + v])] if v else []
+            v = self._clamp(v, -P.REL_MAX, P.REL_MAX)
+            return [bytes([status, num, P.REL_CENTER + v])] if v else []
         return []
 
     def from_midi(self, data):
@@ -143,7 +151,7 @@ class Panel:
         if status == P.NOTE_ON_OUT:
             cid = self._note.get(d1)
             if cid:
-                out.append({"id": cid, "v": 127 if d2 else 0})
+                out.append({"id": cid, "v": P.MAX7 if d2 else 0})
         elif status == P.CC_OUT:
             if d1 in self._cc7:
                 out.append({"id": self._cc7[d1], "v": d2})
@@ -162,7 +170,7 @@ class Panel:
     @staticmethod
     def request_state():
         """Asks Mixxx to resend everything (press + release of the request note)."""
-        return [bytes([P.NOTE_ON_IN, P.REQUEST_NOTE, 127]), bytes([P.NOTE_ON_IN, P.REQUEST_NOTE, 0])]
+        return [bytes([P.NOTE_ON_IN, P.REQUEST_NOTE, P.MAX7]), bytes([P.NOTE_ON_IN, P.REQUEST_NOTE, 0])]
 
 
 # ------------------------------------------------------------------ MIDI ports
@@ -183,7 +191,7 @@ class NullPort:
 
 
 class RtMidiPort:
-    """Both directions of one MIDI port (opened by name, or created virtual on Linux/macOS)."""
+    """Both directions of one MIDI port: an existing port with this name is opened, otherwise a virtual ALSA port is created."""
 
     def __init__(self, name, on_message, allow_virtual=True):
         try:
@@ -196,14 +204,12 @@ class RtMidiPort:
         if out_i is not None and in_i is not None:
             self.out.open_port(out_i)
             self.inp.open_port(in_i)
-        elif allow_virtual and sys.platform != "win32":
+        elif allow_virtual:
             self.out.open_virtual_port(name)
             self.inp.open_virtual_port(name)
         else:
             ports = sorted(set(self.out.get_ports()) | set(self.inp.get_ports()))
-            raise RuntimeError(
-                f'MIDI port "{name}" not found. On Windows create it in loopMIDI (name: {name}). '
-                f"Available ports: {ports or 'none'}")
+            raise RuntimeError(f'MIDI port "{name}" not found. Available ports: {ports or "none"}')
         self.inp.ignore_types(sysex=True, timing=True, active_sense=True)
         self.inp.set_callback(lambda event, _=None: on_message(bytes(event[0])))
 
@@ -233,6 +239,11 @@ class Server:
         self.clients = set()
         self.verbose = verbose
         self.loop = None
+        self.max_client_buffer = MAX_CLIENT_BUFFER      # instance attributes so that tests can shorten them
+        self.ping_interval = PING_INTERVAL
+        self.ping_timeout = PING_TIMEOUT
+        self.dropped = 0                                # screens dropped because they stopped answering/reading
+        self.stopped = None                             # set by stop(): ends run() (used when Mixxx is closed)
         self.midi = port_factory(self._midi_thread_callback)
 
     # MIDI input arrives on rtmidi's thread
@@ -248,15 +259,36 @@ class Server:
         frame = ws_encode(0x1, json.dumps(msg, separators=(",", ":")).encode())
         for w in list(self.clients):
             try:
+                if w.transport.get_write_buffer_size() > self.max_client_buffer:
+                    self._drop(w, "does not read its data")
+                    continue
                 w.write(frame)
             except Exception:  # noqa: BLE001
-                self.clients.discard(w)
+                self._drop(w)
+
+    def _drop(self, writer, why=None):
+        """Forget a screen and cut its connection. The UI reconnects by itself and gets the full state again."""
+        if writer in self.clients:
+            self.clients.discard(writer)
+            if why:
+                self.dropped += 1
+                print(f"screen dropped: {why}", file=sys.stderr)
+        try:
+            writer.transport.abort()
+        except Exception:  # noqa: BLE001
+            pass
 
     def on_ui(self, msg):
         for data in self.panel.from_ui(msg):
             self.midi.send(data)
 
     async def handle(self, reader, writer):
+        sock = writer.get_extra_info("socket")
+        if sock is not None:
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            except OSError:
+                pass
         try:
             head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 10)
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ConnectionError):
@@ -304,6 +336,9 @@ class Server:
                    "connect-src 'self' ws: wss:; img-src data:; base-uri 'none'; form-action 'none'")
             return self._respond(writer, "200 OK", b"" if method == "HEAD" else body, "text/html; charset=utf-8",
                                  f"Content-Security-Policy: {csp}\r\nReferrer-Policy: no-referrer\r\n")
+        if path == "/protocol.json":
+            body = json.dumps({"ui": P.ui_constants()}, separators=(",", ":")).encode()
+            return self._respond(writer, "200 OK", b"" if method == "HEAD" else body, "application/json")
         return self._respond(writer, "404 Not Found", b"not found\n")
 
     async def _websocket(self, headers, reader, writer):
@@ -320,28 +355,61 @@ class Server:
         for data in self.panel.request_state():          # a new screen gets the current state of Mixxx
             self.midi.send(data)
         await writer.drain()
-        while True:
-            opcode, payload = await ws_read(reader)
-            if opcode == 0x1:
-                try:
-                    self.on_ui(json.loads(payload.decode("utf-8")))
-                except (ValueError, UnicodeDecodeError):
-                    pass
-            elif opcode == 0x9:
-                writer.write(ws_encode(0xA, payload))
-            elif opcode == 0x8:
-                writer.write(ws_encode(0x8, payload[:2]))
+        loop = asyncio.get_running_loop()
+        heard = [loop.time()]                            # last time anything arrived from this screen
+        keepalive = loop.create_task(self._keepalive(writer, heard))
+        try:
+            while True:
+                opcode, payload = await ws_read(reader)
+                heard[0] = loop.time()
+                if opcode == 0x1:
+                    try:
+                        self.on_ui(json.loads(payload.decode("utf-8")))
+                    except (ValueError, UnicodeDecodeError):
+                        pass
+                elif opcode == 0x9:
+                    writer.write(ws_encode(0xA, payload))
+                elif opcode == 0x8:
+                    writer.write(ws_encode(0x8, payload[:2]))
+                    await writer.drain()
+                    return
                 await writer.drain()
+        finally:
+            keepalive.cancel()
+
+    async def _keepalive(self, writer, heard):
+        """Pings the screen; drops it when nothing (not even the browser's automatic pong) comes back."""
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(self.ping_interval)
+            if loop.time() - heard[0] > self.ping_interval + self.ping_timeout:
+                self._drop(writer, "no answer to ping")
                 return
-            await writer.drain()
+            try:
+                writer.write(ws_encode(0x9))
+            except Exception:  # noqa: BLE001
+                self._drop(writer)
+                return
 
     async def run(self, host, port, ready=None):
         self.loop = asyncio.get_running_loop()
+        self.stopped = asyncio.Event()                  # before ready(): ready() may already ask to stop
         server = await asyncio.start_server(self.handle, host, port, limit=MAX_HEAD)
         if ready:
             ready(server)
         async with server:
-            await server.serve_forever()
+            serving = asyncio.ensure_future(server.serve_forever())
+            waiter = asyncio.ensure_future(self.stopped.wait())
+            try:
+                await asyncio.wait({serving, waiter}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                serving.cancel()
+                waiter.cancel()
+
+    def stop(self):
+        """Ends run(); may be called from any thread."""
+        if self.loop is not None and self.stopped is not None:
+            self.loop.call_soon_threadsafe(self.stopped.set)
 
 
 def local_addresses():
@@ -368,6 +436,9 @@ def main(argv=None):
     ap.add_argument("--midi-port", default=DEFAULT_PORT_NAME, help=f'MIDI port name (default: "{DEFAULT_PORT_NAME}")')
     ap.add_argument("--dry-run", action="store_true", help="do not open MIDI, only print what would be sent")
     ap.add_argument("--list-ports", action="store_true", help="list MIDI ports and exit")
+    ap.add_argument("--launch", action="store_true",
+                    help="also start Mixxx (native or Flatpak, see tools/studio.py doctor) and quit when it is closed")
+    ap.add_argument("--mixxx-exe", help=argparse.SUPPRESS)       # tests / unusual installs (same as MIXXX_BIN)
     args = ap.parse_args(argv)
     try:
         sys.stdout.reconfigure(line_buffering=True)   # lines show up at once, also when redirected
@@ -383,6 +454,16 @@ def main(argv=None):
         print("MIDI out:", rtmidi.MidiOut().get_ports())
         print("MIDI in :", rtmidi.MidiIn().get_ports())
         return 0
+
+    install = None
+    if args.launch:
+        env = dict(os.environ, **({"MIXXX_BIN": args.mixxx_exe} if args.mixxx_exe else {}))
+        try:
+            install = mixxxenv.detect(env, minimum=mixxxenv.read_min_version(Path(__file__).resolve().parents[1]))
+        except mixxxenv.MixxxMissing as e:
+            print("ERROR:", e, file=sys.stderr)
+            return 1
+        launcher.prepare(install)
 
     if args.dry_run:
         factory = lambda cb: NullPort(cb)  # noqa: E731
@@ -403,6 +484,15 @@ def main(argv=None):
         if args.host == "0.0.0.0":
             print("Everyone in this network can open it. Use --host 127.0.0.1 to allow this PC only.")
         print("MIDI:", "dry run (nothing is sent)" if args.dry_run else f'port "{args.midi_port}"')
+        if install:
+            try:
+                proc = launcher.start_mixxx(install)
+            except OSError as e:
+                print("ERROR: Mixxx could not be started:", e, file=sys.stderr)
+                server.stop()
+                return
+            print("Mixxx started. Closing Mixxx ends this panel too.")
+            threading.Thread(target=lambda: (proc.wait(), server.stop()), daemon=True).start()
 
     try:
         asyncio.run(server.run(args.host, args.port, ready))

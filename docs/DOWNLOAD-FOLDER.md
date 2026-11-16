@@ -9,7 +9,7 @@ Mixxx cannot play Spotify or SoundCloud streams. The simplest "connection" betwe
   Spotify/...                        output of your own Spotify app (see below)
   Purchased/...                      Bandcamp, Beatport, ...
 ```
-Windows: `C:\Users\<you>\Music\DJ`. Set the same folder everywhere (`DJ_MUSIC_DIR` or `--out`).
+Set the same folder everywhere (`DJ_MUSIC_DIR` or `--out`).
 
 **Rules for every tool that writes there** (so Mixxx shows good data without any extra step):
 

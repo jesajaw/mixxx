@@ -99,6 +99,14 @@ class PanelUI(unittest.TestCase):
         self.page.wait_for_timeout(120)
 
     # tests
+    def test_constants_come_from_the_server(self):
+        self.assertEqual(self.page.evaluate("K"), P.ui_constants())
+        # the crossfader and the pitch fader really start at the protocol's centre
+        left = self.page.evaluate("document.querySelector('[data-id=\"xfader\"] .cap').style.left")
+        bottom = self.page.evaluate("document.querySelector('[data-id=\"d1.rate\"] .cap').style.bottom")
+        self.assertAlmostEqual(float(left.rstrip("%")), P.CENTER7 / P.MAX7 * 100, places=2)
+        self.assertAlmostEqual(float(bottom.rstrip("%")), P.CENTER14 / P.MAX14 * 100, places=2)
+
     def test_every_protocol_control_has_a_widget_and_every_widget_exists(self):
         widgets = set(self.page.evaluate("Object.keys(widgets)"))
         proto = {c["id"] for c in P.CONTROLS if c["id"] != "request"}

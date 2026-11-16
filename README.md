@@ -4,43 +4,52 @@ Personal setup for **[Mixxx](https://mixxx.org) 2.5.x** (see [git/Mixxx](https:/
 
 Mixxx provides the complete DJ engine (decks, EQ, crossfader, loops, cues, sync, effects, recording); this repo adds everything personal around it.
 
-## Quick start
+## Quick start (Linux)
 
 ```bash
-# Linux / macOS
 git clone <your-repo> && cd mixxx-dj-studio
-bash install/install.sh            # link the skin + keyboard layout (backs up an existing one)
-```
-```bat
-:: Windows: double-click install\install.bat, or from a terminal:
-install\install.bat
-:: equivalent: powershell -NoProfile -ExecutionPolicy Bypass -File install\install.ps1
+make install      # once: system packages (asks for sudo), Mixxx >= 2.5, Python env, skin, settings
+make run          # every day: touch panel + Mixxx in one command; closing Mixxx stops the panel
+make doctor       # anything wrong? it checks everything and says what to do about each problem
 ```
 
-Then in Mixxx: *Preferences -> Interface -> Skin = **StudioDeck**, Color scheme = **Studio***; restart Mixxx
-(keyboard layout). To undo: `bash install/install.sh --uninstall` or `install\install.bat -Uninstall`.
+`make help` lists all targets. What `make install` does, in this order: `deps` (venv, pip, ALSA tools), `mixxx` (Mixxx >= 2.5:
+the official PPA `ppa:mixxx/mixxx` on Ubuntu/Mint, otherwise the Flatpak from Flathub; skipped if a new enough Mixxx exists),
+`venv` (`.venv` with python-rtmidi), `skin` (skin, controller mapping and keyboard layout into Mixxx's settings folder),
+`configure` (selects the StudioDeck skin, with Mixxx closed; the old `mixxx.cfg` is kept as `.bak`).
 
-### If the install does not work
+**Once, in Mixxx** (it cannot be done from outside): `make run`, then *Preferences -> Controllers -> DJS Panel* -> mapping
+**DJS Touch Panel** -> tick *Enabled*. Mixxx remembers it. The device exists only while the panel runs. On the tablet (same
+Wi-Fi) open the address that `make run` prints and tap FULLSCREEN (details: `docs/PANEL.md`).
+
+Overrides (environment variables): `MIXXX=native|flatpak` (if both exist), `MIXXX_BIN=/path/to/mixxx`,
+`MIXXX_DATA=<settings folder>` (passed as `--settings-path`), `PY=python3.12`, `VENV=.venv`. Undo: `make uninstall`.
+
+### If something does not work
+
+Run `make doctor` first. It prints one line per check and the command that fixes it.
 
 | Symptom | Cause / fix |
 |---|---|
-| `Permission denied` on `install/install.sh` | Run it as `bash install/install.sh`. (The executable bit was missing in older commits; fixed now.) |
-| Windows: "running scripts is disabled on this system" | Use `install\install.bat` (it bypasses the execution policy for that one run). |
-| Windows: junction error | The script falls back to copying the skin automatically. You can also force it: `install\install.bat -Copy`. |
-| Skin installed but not listed in Mixxx | Check `mixxx --version`. The skin is derived from Mixxx **2.5.x**; distribution packages are often older (Ubuntu 24.04 ships 2.4.0). Use the official Mixxx PPA, Flatpak or installer. |
-| Flatpak Mixxx | The installer detects it and copies the skin (a symlink would be invisible inside the sandbox). Data folder: `~/.var/app/org.mixxx.Mixxx/data/mixxx`. |
-| Wrong data folder | Pass it explicitly: `--data-dir <folder>` (Linux/macOS) or `-DataDir <folder>` (Windows). The installer prints the folder it uses. |
+| `doctor`: *no DISPLAY / WAYLAND_DISPLAY* | Mixxx needs a graphical session. Plain SSH has none; on WSL you need WSLg (Windows 11 or a current WSL). |
+| `doctor`: *no ALSA sequencer (/dev/snd/seq)* | The panel creates a virtual ALSA MIDI port and needs the kernel's sequencer: real Linux `sudo modprobe snd-seq`. WSL2 and containers usually have **no** ALSA MIDI at all, so the panel cannot work there. |
+| `doctor`: *Mixxx is older than 2.5* | `make mixxx`. Ubuntu's own package is 2.4.0; the skin is derived from 2.5.x. |
+| `make venv` says *no prebuilt python-rtmidi* | New Python without a wheel: `make deps-build venv` (installs compilers and ALSA headers). |
+| Skin installed but not listed | Check the Mixxx version (`make doctor`). Flatpak: the skin is copied (a symlink would be invisible in the sandbox); data folder `~/.var/app/org.mixxx.Mixxx/data/mixxx`. |
+| Wrong data folder | `make doctor` shows it; override with `MIXXX_DATA=<folder>`. |
+| `make configure` says Mixxx is running | Close Mixxx first, it would overwrite the settings when it quits. |
+| `Permission denied` on `install/install.sh` | Run it as `bash install/install.sh` (the make targets do). |
 
-If it still fails, send the full installer output and, if Mixxx starts but shows the wrong skin, `~/.mixxx/mixxx.log`
-(Windows: `%LOCALAPPDATA%\Mixxx\mixxx.log`).
+If it still fails, send the output of `make doctor` and, if Mixxx starts but shows the wrong skin, `~/.mixxx/mixxx.log`.
 
 ## Contents
 
 | Path | What |
 |---|---|
+| `Makefile`, `tools/studio.py` | the one entry point: install, run, doctor, tests (`make help`); the helper behind it |
 | `skins/StudioDeck/` | LateNight derivative with the *Studio* color scheme, Mic/Aux rack visible by default -> `docs/SKIN.md` |
 | `keyboard/Custom.kbd.cfg` | German Mixxx layout + extra keys (below) |
-| `audio-routing/` | Spotify/SoundCloud as an Aux channel via a virtual audio device (Linux script, Windows guide, Spotify Connect service) |
+| `audio-routing/` | Spotify/SoundCloud as an Aux channel via a virtual audio device (Linux script, Spotify Connect service) |
 | `tools/fetch_tracks.py` | SoundCloud links (only with downloads enabled / your own tracks) -> files with tags & cover |
 | `tools/mixxx_library.py` | Read the library: statistics, tracks without BPM, export crates/playlists as M3U8 |
 | `tools/make_scheme.py`, `palette.json` | generates the Studio scheme from PaleMoon; palette is changeable in one place |
@@ -49,7 +58,7 @@ If it still fails, send the full installer output and, if Mixxx starts but shows
 | `panel/` | **touch panel**: `server.py` (browser <-> virtual MIDI), `web/index.html` (the touch UI), `protocol.py` (all controls) -> `docs/PANEL.md` |
 | `controllers/` | generated Mixxx mapping of the panel (`DJS-Touch-Panel*`); place for your own MIDI/HID mappings |
 | `tools/make_panel.py` | generates that mapping from `panel/protocol.py` (`--check` in `make check`) |
-| `docs/PANEL.md` | panel setup (Windows/loopMIDI), one-sound-card setup, usage, tuning, troubleshooting |
+| `docs/PANEL.md` | panel setup, one-sound-card setup, usage, tuning, troubleshooting |
 | `docs/DOWNLOAD-FOLDER.md` | one shared music folder for SoundCloud, your Spotify app and purchases |
 | `docs/SOURCES.md` | what works and what does not with Spotify/SoundCloud (API, system audio, alternatives) |
 
@@ -94,18 +103,22 @@ differs from `de_DE.kbd.cfg` by 9 added lines.
 
 ## Honest test status
 
-Touch panel: Mixxx script tested against a mock of the Mixxx API (Node), server + WebSocket tests, UI tests in Chromium with
-simulated multi-touch; **not** tested in a running Mixxx or with real loopMIDI (see `docs/PANEL.md`).
-Skin rebuilt on Mixxx 2.5.7 (stable, Oct 2026); re-verified with `make check` (unit tests, 1046 file references,
-Studio scheme regenerates identically) and an install/uninstall round trip into a temporary data folder.
-Earlier rounds: static skin checks (XML, QSS braces, 1046 file references), the unit tests, `install.sh` (including
-re-install, uninstall and the Flatpak path), `install.ps1` under PowerShell 7 on Linux (link, copy, re-install,
-uninstall), shellcheck on the shell scripts, and Mixxx 2.4.0 starting headless.
+**Tested (automatically, `make check`):** the Mixxx script against a mock of the Mixxx API (Node), server + WebSocket tests,
+UI tests in Chromium with simulated multi-touch, the skin (XML, QSS, 1046 file references, the Studio scheme regenerates
+identically), `install.sh`, and the Makefile flow: distribution detection (Ubuntu/Mint -> PPA, others -> Flatpak), the
+install commands per distribution, Mixxx detection (native / Flatpak / overrides), `make doctor` with fake systems, the MIDI
+self-test against an in-memory MIDI fake, and `make run` with a stand-in for Mixxx (starts it with the right arguments, ends
+the panel when Mixxx ends).
 
-**Not** tested: loading the skin in a running Mixxx 2.5.x (the skin targets 2.5.x), `install.ps1` under Windows
-PowerShell 5.1 / real Windows, and the system-audio chain with real hardware. `dj-stream.sh` and the tools are tested
-against stand-ins (fake `pactl`, a test database in the Mixxx schema). Errors on first start are written to
-`~/.mixxx/mixxx.log` (Windows: `%LOCALAPPDATA%\Mixxx\mixxx.log`).
+**Run for real in an Ubuntu 24.04 container (no display, no sound, no MIDI):** `make venv`, `make skin`, `make configure`,
+`make doctor` (it correctly reported the old Mixxx 2.4.0, the missing display and the missing ALSA sequencer), `make run`
+with a stand-in for Mixxx, and Mixxx 2.4.0 starting headless.
+
+**Not tested:** the PPA / Flatpak installation itself (no access to them from the test machine), loading the skin in a
+running Mixxx 2.5.x, **real ALSA MIDI between the panel and Mixxx** (including whether Mixxx lists the panel's virtual port
+as one controller: run `make midi-test` for the port itself, then check *Preferences -> Controllers*), the feel of the jog
+on a real touchscreen, and the system-audio chain with real hardware. `dj-stream.sh` and the tools are tested against
+stand-ins (fake `pactl`, a test database in the Mixxx schema). Errors on first start are written to `~/.mixxx/mixxx.log`.
 
 ## Licenses
 

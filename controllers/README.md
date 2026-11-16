@@ -2,8 +2,8 @@
 
 * `DJS-Touch-Panel.midi.xml` + `DJS-Touch-Panel-scripts.js` - the mapping of the touch panel (see `docs/PANEL.md`).
   **Generated** by `python3 tools/make_panel.py` from `panel/protocol.py`; do not edit by hand.
-* Put your own MIDI/HID mappings (XML + JavaScript) here once you have hardware. `install/install.sh`
-  (`install\install.bat` on Windows) copies every `*.xml` / `*.js` here to `<Mixxx data folder>/controllers/`,
+* Put your own MIDI/HID mappings (XML + JavaScript) here once you have hardware. `install/install.sh` (`make skin`)
+  copies every `*.xml` / `*.js` here to `<Mixxx data folder>/controllers/`,
   where Mixxx picks them up. You can also copy them there manually.
 
 Steps for a new mapping:

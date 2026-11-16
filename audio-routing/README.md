@@ -6,8 +6,7 @@ Mixxx reads it as an **auxiliary input** and mixes it with fader, EQ, filter, ef
 | Platform | Files |
 |----------|-------|
 | Linux (PulseAudio / PipeWire) | `linux/dj-stream.sh`, optional `linux/librespot-deck.service` |
-| Windows | `windows/README.md` (VB-CABLE / VoiceMeeter) |
-| macOS | BlackHole (open-source loopback), same idea as on Windows: app output = BlackHole, Mixxx input = BlackHole |
+| macOS | BlackHole (open-source loopback), same idea as on Linux: app output = BlackHole, Mixxx input = BlackHole |
 
 **What Aux cannot do** (the stream runs through "live"): no waveform, no BPM analysis, no sync,
 no hotcues/loops, no tempo/pitch control. You mix by ear; cueing in the headphones (PFL)

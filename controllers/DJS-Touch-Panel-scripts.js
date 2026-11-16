@@ -1065,6 +1065,10 @@ DJSPanel.CC_IN = 176;        // 0xB0
 DJSPanel.NOTE_ON_OUT = 145;  // 0x91
 DJSPanel.CC_OUT = 177;       // 0xB1
 DJSPanel.JOG_TICKS_PER_REV = 1024;
+DJSPanel.MAX7 = 127;
+DJSPanel.MAX14 = 16383;
+DJSPanel.REL_CENTER = 64;
+DJSPanel.SCRATCH_RPM = 33.333333333333336;   // 33 1/3
 
 
 DJSPanel.shift = false;
@@ -1158,13 +1162,13 @@ DJSPanel.input = function(channel, control, value, status, group) {
         DJSPanel.button(c, value > 0);
         break;
     case "abs7":
-        engine.setParameter(c.mixxx.group, c.mixxx.key, value / 127);
+        engine.setParameter(c.mixxx.group, c.mixxx.key, value / DJSPanel.MAX7);
         break;
     case "abs14":
         DJSPanel.abs14(c, hit.part, value);
         break;
     case "rel":
-        DJSPanel.relative(c, value - 64);
+        DJSPanel.relative(c, value - DJSPanel.REL_CENTER);
         break;
     }
 };
@@ -1200,7 +1204,7 @@ DJSPanel.button = function(c, pressed) {
         break;
     case "scratch":
         if (pressed) {
-            engine.scratchEnable(m.deck, DJSPanel.JOG_TICKS_PER_REV, 33 + 1 / 3, 1 / 8, (1 / 8) / 32);
+            engine.scratchEnable(m.deck, DJSPanel.JOG_TICKS_PER_REV, DJSPanel.SCRATCH_RPM, 1 / 8, (1 / 8) / 32);
         } else {
             engine.scratchDisable(m.deck);
         }
@@ -1219,7 +1223,7 @@ DJSPanel.abs14 = function(c, part, value) {
         return;
     }
     var raw = ((DJSPanel.msb[c.id] || 0) << 7) | value;
-    var param = DJSPanel.clamp(raw / 16383, 0, 1);
+    var param = DJSPanel.clamp(raw / DJSPanel.MAX14, 0, 1);
     if (c.mixxx.center_snap && Math.abs(param - 0.5) < 0.0008) {
         param = 0.5;    // exact pitch center: 0.00 %
     }
@@ -1253,16 +1257,16 @@ DJSPanel.sendFeedback = function(c, force) {
     var raw;
     switch (fb.type) {
     case "led":
-        raw = engine.getValue(fb.group, fb.key) ? 127 : 0;
+        raw = engine.getValue(fb.group, fb.key) ? DJSPanel.MAX7 : 0;
         break;
     case "param7":
-        raw = Math.round(DJSPanel.clamp(engine.getParameter(fb.group, fb.key), 0, 1) * 127);
+        raw = Math.round(DJSPanel.clamp(engine.getParameter(fb.group, fb.key), 0, 1) * DJSPanel.MAX7);
         break;
     case "param14":
-        raw = Math.round(DJSPanel.clamp(engine.getParameter(fb.group, fb.key), 0, 1) * 16383);
+        raw = Math.round(DJSPanel.clamp(engine.getParameter(fb.group, fb.key), 0, 1) * DJSPanel.MAX14);
         break;
     case "scaled14":
-        raw = Math.round(DJSPanel.clamp(engine.getValue(fb.group, fb.key) * fb.scale, 0, 16383));
+        raw = Math.round(DJSPanel.clamp(engine.getValue(fb.group, fb.key) * fb.scale, 0, DJSPanel.MAX14));
         break;
     default:
         return;

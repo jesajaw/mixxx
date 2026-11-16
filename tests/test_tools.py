@@ -148,3 +148,13 @@ class UpstreamDiff(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InstallScriptMessage(unittest.TestCase):
+    def test_closing_message_has_no_command_substitution(self):
+        """The message is an unquoted heredoc: backticks or $( ) in it would be EXECUTED (this once ran `make configure`)."""
+        import re
+        text = (ROOT / "install" / "install.sh").read_text()
+        body = text[text.index("cat <<MSG"):]
+        body = body[:body.index("\nMSG")]
+        self.assertIsNone(re.search(r"`|\$\(", body), "command substitution inside the heredoc")

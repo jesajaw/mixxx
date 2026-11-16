@@ -79,7 +79,7 @@ fi
 
 cat <<MSG
 
-Done. In Mixxx: Preferences > Interface > Skin = StudioDeck, Color scheme = Studio.
+Done. Select the skin with: make configure (Mixxx closed), or in Mixxx: Preferences > Interface > Skin = StudioDeck, Color scheme = Studio.
 Restart Mixxx so the keyboard layout is loaded. To reload skin changes from the repo use
 Ctrl+Shift+R (developer mode only: mixxx --developer).
 Note: the skin is derived from Mixxx 2.5.x. Older Mixxx versions (e.g. 2.4.0 from the Ubuntu 24.04

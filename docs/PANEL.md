@@ -11,24 +11,24 @@ tablet / Surface (browser)  --WiFi-->  panel/server.py  --virtual MIDI port "DJS
         <-- play LEDs, VU, BPM, position, fader positions -- (Mixxx answers on the same port) --
 ```
 
-## Setup (Windows, once)
+## Setup (Linux)
 
-1. **Python 3** for Windows (python.org or Microsoft Store), then in a normal terminal (not WSL):
-   `pip install python-rtmidi`
-2. **loopMIDI** (free, https://www.tobias-erichsen.de/software/loopmidi.html): create **one port called `DJS Panel`** and
-   leave loopMIDI running (it can start with Windows). Windows has no built-in virtual MIDI cable; this is it.
-3. **Install the mapping into Mixxx:** `install\install.bat` (copies `controllers/DJS-Touch-Panel*` to Mixxx).
-4. **Mixxx:** Preferences > Controllers > `DJS Panel` > *Load Mapping* = **DJS Touch Panel** > tick *Enabled* > Apply.
-5. **Start the panel:** `python panel\server.py` (or `make panel`). Windows asks once whether Python may use the network:
-   allow *private networks*. The window prints the addresses, e.g. `http://192.168.1.20:8765/`.
-6. **On the tablet** (same WiFi): open that address, tap **FULLSCREEN**. On the Surface that runs Mixxx itself:
-   `http://localhost:8765/`.
+```bash
+make install       # once (see README): Mixxx >= 2.5, Python env, skin, mapping
+make run           # panel + Mixxx together
+```
 
-Linux/macOS: the MIDI port is created automatically (`pip install python-rtmidi`, then `python3 panel/server.py`);
-Mixxx then lists a controller named `DJS Panel`.
+1. **Mixxx, once:** Preferences > Controllers > `DJS Panel` > *Load Mapping* = **DJS Touch Panel** > tick *Enabled* > Apply.
+   The device exists only while the panel server runs (it creates the virtual ALSA MIDI port "DJS Panel" itself), so
+   `make run` starts the server first and Mixxx after it.
+2. **On the tablet** (same Wi-Fi): open the address that `make run` prints, e.g. `http://192.168.1.20:8765/`, tap
+   **FULLSCREEN**. On the PC that runs Mixxx itself: `http://localhost:8765/`.
+3. The tablet only needs a browser. If it cannot connect, a firewall on the PC may block port 8765 (e.g. `sudo ufw allow 8765/tcp`
+   from your local network only).
 
-Check without Mixxx or MIDI: `python3 panel/server.py --dry-run` prints every MIDI message the panel would send.
-`python3 panel/server.py --list-ports` shows the MIDI ports the server can see.
+Without Mixxx or MIDI: `make dry-run` prints every MIDI message the panel would send. `python3 panel/server.py --list-ports`
+shows the MIDI ports the server can see, `make midi-test` checks that the virtual port works (server <-> a second MIDI
+client), `make doctor` checks the whole chain.
 
 ## One sound card only (no second output for headphones)
 
@@ -37,7 +37,7 @@ by switching what that output carries:
 
 1. Mixxx > Preferences > **Sound Hardware** > *Output*: set **Headphones** to your sound card (channels 1-2).
    Leave **Main** empty. (Recording and streaming still use Mixxx's internal main mix.)
-2. *Sound API* **Windows WASAPI**, latency 20 ms or less if the sound stays clean.
+2. *Sound API* **ALSA** (or JACK if you use it), latency 20 ms or less if the sound stays clean.
 3. On the panel the knob **CUE/MAIN** decides what you hear: left = only the cue (the deck(s) with **HEAD** lit),
    right = only the main mix, middle = both. Normal playing: knob right. To pre-listen a track: turn it left (or middle),
    press **HEAD** on that deck.
@@ -67,17 +67,19 @@ depend on taste or hardware:
 * Jog sensitivity: `JOG_TICKS_PER_REV` (`panel/protocol.py`, default 1024) and the nudge `scale` of `dN.nudge`.
 * Knob drag length: `/ 160` in `knob()` in `panel/web/index.html`.
 * After editing `panel/protocol.py` or `panel/mapping.template.js`: `python3 tools/make_panel.py` (or `make mapping`),
-  then reinstall (`install\install.bat`) and re-select the mapping in Mixxx.
+  then `make skin` (copies the mapping into Mixxx) and re-select the mapping in Mixxx.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| Server: `MIDI port "DJS Panel" not found` | loopMIDI is not running or the port has another name (`--list-ports`, or `--midi-port NAME`) |
+| Server: `MIDI port "DJS Panel" not found` / ALSA error | No ALSA sequencer (`make doctor`): real Linux `sudo modprobe snd-seq`; WSL2 and containers have none. Or the name differs: `--list-ports`, `--midi-port NAME` |
 | Panel says *waiting for Mixxx* | The mapping is not enabled in Mixxx, or Mixxx uses a different port. Start Mixxx with `--controller-debug` and check `mixxx.log` |
 | Tablet cannot open the address | Same WiFi? Firewall prompt answered with *private networks*? Try `http://localhost:8765/` on the PC first |
-| Buttons work, nothing lights up | The mapping is loaded but the output does not arrive: in Mixxx the controller must be *Enabled* for input **and** output (same loopMIDI port) |
-| Server in WSL | Use Windows Python instead. WSL cannot see Windows MIDI ports |
+| Buttons work, nothing lights up | The mapping is loaded but the output does not arrive: in Mixxx the controller must be *Enabled* for input **and** output (the same "DJS Panel" device) |
+| Mixxx lists two "DJS Panel" devices (an input-only and an output-only one) | Then Mixxx did not pair the server's two virtual ALSA ports. Tell me what *Preferences > Controllers* and `aconnect -l` show; a single in/out ALSA client is the fix to build |
+| Server prints `screen dropped: ...` | A screen stopped answering (tablet asleep, Wi-Fi lost). The server pings every 15 s and cuts a screen that is silent for 25 s or that does not read its data (64 KB backlog). The panel reconnects by itself and gets the full state again - nothing to fix |
+| Linux: panel says *waiting for Mixxx* although the mapping is enabled | The server creates the virtual MIDI port, so start `panel/server.py` **before** Mixxx (or rescan controllers in Mixxx preferences) |
 
 ## Security
 
@@ -99,5 +101,9 @@ they are out of date.
 * All control names used exist in the Mixxx 2.5 source.
 * The server (HTTP, WebSocket, origin check, malformed input) and the UI in Chromium with real multi-touch (two fingers
   at once, jog, 14-bit fader, shift, feedback display) have automated tests.
-* **Not verified:** loading in a running Mixxx, real MIDI through loopMIDI/python-rtmidi (no Windows, no Mixxx and no
-  MIDI hardware here), and the feel of the jog on a real touchscreen. Expect to tune the numbers above.
+* **Not verified:** loading in a running Mixxx, real MIDI through ALSA/python-rtmidi into Mixxx (the test machine has no
+  ALSA sequencer, no display and no MIDI hardware), and the feel of the jog on a real touchscreen. Expect to tune the numbers above.
+
+## Protocol constants
+
+All protocol numbers (7/14 bit full scale, centres, jog ticks per revolution, BPM scale, record speed ...) are defined once in `panel/protocol.py`. The Mixxx script gets them through `tools/make_panel.py`, the server imports them, and the browser UI loads them from `/protocol.json` before it builds the screen. `tests/test_panel.py` (*SingleSource*) fails if one of these numbers is hard-coded again in the UI, the script template or the server.

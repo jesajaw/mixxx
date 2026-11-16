@@ -7,5 +7,5 @@
 - [ ] Controller mapping for existing hardware (`controllers/`)
 - [ ] Crate export as a Rekordbox/Traktor-compatible playlist (`tools/mixxx_library.py`)
 - [ ] Automatic BPM estimation for the Aux stream (tap-tempo overlay or external tool)
-- [ ] Windows script for VB-CABLE setup (currently instructions only)
+- [ ] Single ALSA client with an input and an output port for the panel (if Mixxx does not pair the two virtual ports)
 - [ ] Mixxx 2.6: rebase the skin once it is stable

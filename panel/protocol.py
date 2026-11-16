@@ -37,6 +37,27 @@ NOTE_ON_OUT, CC_OUT = 0x90 | OUT_CH, 0xB0 | OUT_CH
 BPM_SCALE = 10          # bpm is sent as bpm * 10 (14 bit -> up to 1638.3 bpm)
 JOG_TICKS_PER_REV = 1024
 
+# Numeric constants shared by the server, the Mixxx script (generated) and the browser UI (/protocol.json).
+# They are defined here ONLY; no other file may hard-code them (tests/test_panel.py checks index.html).
+MAX7 = 127              # full scale of a 7 bit value; also "pressed" / "LED on"
+MAX14 = 16383           # full scale of a 14 bit value (MSB << 7 | LSB)
+REL_CENTER = 64         # relative controls: 64 + delta
+REL_MAX = 63            # largest |delta| of one relative message
+CENTER7 = 64            # resting position of a centred 7 bit knob (EQ, filter, crossfader)
+CENTER14 = 8192         # resting position of the 14 bit pitch fader (0.00 %)
+SCRATCH_RPM = 100 / 3   # the virtual platter turns like a record: 33 1/3 rpm
+SECONDS_PER_REV = round(60 / SCRATCH_RPM, 6)   # = 1.8 s, used to turn the jog mark with the playposition
+JOG_RING_DIVISOR = 6    # the outer jog ring (nudge) is this many times less sensitive than the platter
+
+
+def ui_constants():
+    """What the browser UI needs to know (served as /protocol.json)."""
+    return {
+        "max7": MAX7, "max14": MAX14, "rel_max": REL_MAX, "center7": CENTER7, "center14": CENTER14,
+        "jog_ticks_per_rev": JOG_TICKS_PER_REV, "jog_ring_divisor": JOG_RING_DIVISOR,
+        "bpm_scale": BPM_SCALE, "seconds_per_rev": SECONDS_PER_REV,
+    }
+
 
 class _Alloc:
     """Hands out unique MIDI numbers: notes 0..126, MSB cc 0..31 (LSB = +32), single cc 64..127."""
