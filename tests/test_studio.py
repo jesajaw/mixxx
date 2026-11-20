@@ -85,7 +85,9 @@ class InstallPlans(unittest.TestCase):
         for pkg in ("python3-venv", "python3-pip", "alsa-utils"):
             self.assertIn(pkg, d)
         self.assertNotIn("libasound2-dev", d)
-        self.assertIn("libasound2-dev", flat(E.deps_plan(UBUNTU, [], build=True)))
+        build = flat(E.deps_plan(UBUNTU, [], build=True))
+        for pkg in ("build-essential", "pkg-config", "python3-dev", "libasound2-dev"):      # what the python-rtmidi build needs
+            self.assertIn(pkg, build)
         self.assertIn("alsa-lib-devel", flat(E.deps_plan(FEDORA, [], build=True)))
         self.assertIn("python-pip", flat(E.deps_plan(ARCH, [])))
 
@@ -368,6 +370,13 @@ class Makefile(unittest.TestCase):
         out = self.make("-n", "-B", "run", "ARGS=--dry-run").stdout
         self.assertIn("panel/server.py --launch --dry-run", out)
         self.assertIn(".venv", out)
+
+    def test_venv_falls_back_to_a_source_build_by_itself(self):
+        out = self.make("-n", "-B", "venv").stdout
+        wheel_only = out.index("--only-binary=:all:")
+        self.assertLess(wheel_only, out.index("studio.py deps --build"))                     # build tools only when no wheel exists
+        self.assertLess(out.index("studio.py deps --build"), out.rindex("pip install -r requirements.txt"))
+        self.assertIn("rm -rf .venv", out)                                                   # a failed build leaves no half venv
 
     def test_dry_run_target_needs_no_python_env(self):
         self.assertNotIn("-m venv", self.make("-n", "dry-run").stdout)

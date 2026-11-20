@@ -156,15 +156,15 @@ def deps_plan(osr, sudo, build=False):
     """System packages the Python side needs (venv, pip, ALSA tools); build=True adds what compiling python-rtmidi needs."""
     fam = family(osr)
     if fam == "debian":
-        pkgs = ["python3-venv", "python3-pip", "alsa-utils"] + (["build-essential", "python3-dev", "libasound2-dev"] if build else [])
+        pkgs = ["python3-venv", "python3-pip", "alsa-utils"] + (["build-essential", "pkg-config", "python3-dev", "libasound2-dev"] if build else [])
         return [sudo + ["apt-get", "update"], sudo + ["apt-get", "install", "-y"] + pkgs]
     if fam == "fedora":
-        pkgs = ["python3-pip", "alsa-utils"] + (["gcc-c++", "python3-devel", "alsa-lib-devel"] if build else [])
+        pkgs = ["python3-pip", "alsa-utils"] + (["gcc-c++", "pkgconf-pkg-config", "python3-devel", "alsa-lib-devel"] if build else [])
         return [sudo + ["dnf", "install", "-y"] + pkgs]
     if fam == "arch":
         pkgs = ["python-pip", "alsa-utils"] + (["base-devel", "alsa-lib"] if build else [])
         return [sudo + ["pacman", "-S", "--needed", "--noconfirm"] + pkgs]
     if fam == "suse":
-        pkgs = ["python3-pip", "alsa-utils"] + (["gcc-c++", "python3-devel", "alsa-devel"] if build else [])
+        pkgs = ["python3-pip", "alsa-utils"] + (["gcc-c++", "pkg-config", "python3-devel", "alsa-devel"] if build else [])
         return [sudo + ["zypper", "--non-interactive", "install"] + pkgs]
     raise MixxxMissing("Unknown distribution: install Python 3 with venv/pip and alsa-utils yourself, then run make venv")

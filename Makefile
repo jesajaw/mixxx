@@ -40,17 +40,19 @@ midi-test: $(VENV)/.ready ## self-test of the virtual MIDI port (server <-> seco
 deps: ## system packages for the Python side (venv, pip, ALSA tools; asks for sudo)
 	$(STUDIO) deps
 
-deps-build: ## only if 'make venv' finds no prebuilt python-rtmidi: compilers + ALSA headers
+deps-build: ## compilers + ALSA headers for building python-rtmidi (make venv does this by itself when needed)
 	$(STUDIO) deps --build
 
 mixxx: ## Mixxx >= 2.5: official PPA on Ubuntu/Mint, otherwise Flatpak (skipped if already new enough)
 	$(STUDIO) mixxx-install
 
-venv: $(VENV)/.ready ## Python environment with python-rtmidi (in .venv)
+venv: $(VENV)/.ready ## Python environment with python-rtmidi (in .venv; builds it from source if there is no prebuilt package)
 $(VENV)/.ready: requirements.txt
 	$(PY) -m venv $(VENV)
-	$(VPY) -m pip install --quiet --only-binary=:all: -r requirements.txt || { \
-	  echo "No prebuilt python-rtmidi for this Python. Run:  make deps-build venv"; rm -rf $(VENV); exit 1; }
+	@$(VPY) -m pip install --quiet --only-binary=:all: -r requirements.txt 2>/dev/null || { \
+	  echo "No prebuilt python-rtmidi for Python $$($(VPY) -c 'import sys; print(sys.version.split()[0])') - building it from source (installs compilers + ALSA headers, asks for sudo) ..."; \
+	  $(STUDIO) deps --build && $(VPY) -m pip install -r requirements.txt || { \
+	    echo "Building python-rtmidi failed (see the messages above: they name the missing tool or header)."; rm -rf $(VENV); exit 1; }; }
 	@touch $@
 
 skin: ## skin, controller mapping and keyboard layout into Mixxx's settings folder

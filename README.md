@@ -34,7 +34,7 @@ Run `make doctor` first. It prints one line per check and the command that fixes
 | `doctor`: *no DISPLAY / WAYLAND_DISPLAY* | Mixxx needs a graphical session. Plain SSH has none; on WSL you need WSLg (Windows 11 or a current WSL). |
 | `doctor`: *no ALSA sequencer (/dev/snd/seq)* | The panel creates a virtual ALSA MIDI port and needs the kernel's sequencer: real Linux `sudo modprobe snd-seq`. WSL2 and containers usually have **no** ALSA MIDI at all, so the panel cannot work there. |
 | `doctor`: *Mixxx is older than 2.5* | `make mixxx`. Ubuntu's own package is 2.4.0; the skin is derived from 2.5.x. |
-| `make venv` says *no prebuilt python-rtmidi* | New Python without a wheel: `make deps-build venv` (installs compilers and ALSA headers). |
+| `make venv` prints *no prebuilt python-rtmidi* | Normal for new Pythons (3.13+; the project has wheels only up to 3.12): it installs compilers and ALSA headers (sudo) and builds python-rtmidi itself, which takes about a minute. If that fails, the messages above name the missing header or tool. |
 | Skin installed but not listed | Check the Mixxx version (`make doctor`). Flatpak: the skin is copied (a symlink would be invisible in the sandbox); data folder `~/.var/app/org.mixxx.Mixxx/data/mixxx`. |
 | Wrong data folder | `make doctor` shows it; override with `MIXXX_DATA=<folder>`. |
 | `make configure` says Mixxx is running | Close Mixxx first, it would overwrite the settings when it quits. |
