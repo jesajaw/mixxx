@@ -114,8 +114,12 @@ the panel when Mixxx ends).
 `make doctor` (it correctly reported the old Mixxx 2.4.0, the missing display and the missing ALSA sequencer), `make run`
 with a stand-in for Mixxx, and Mixxx 2.4.0 starting headless.
 
-**Not tested:** the PPA / Flatpak installation itself (no access to them from the test machine), loading the skin in a
-running Mixxx 2.5.x, **real ALSA MIDI between the panel and Mixxx** (including whether Mixxx lists the panel's virtual port
+**Skin in a real Mixxx:** loaded in Mixxx 2.4.0 under a virtual display (screenshot checked: decks, mixer, effects, samplers,
+library). That found a real bug (the skin addressed itself as `skins:StudioDeck/`, which Mixxx does not resolve for a user skin; see
+`docs/SKIN.md`). On 2.4.0 the log still shows ~47 warnings about tooltip IDs: those exist only in 2.5, so they are expected there.
+
+**Not tested:** the PPA / Flatpak installation itself (no access to them from the test machine), the skin in a
+running Mixxx 2.5.x (your 2.5.6 will tell), **real ALSA MIDI between the panel and Mixxx** (including whether Mixxx lists the panel's virtual port
 as one controller: run `make midi-test` for the port itself, then check *Preferences -> Controllers*), the feel of the jog
 on a real touchscreen, and the system-audio chain with real hardware. `dj-stream.sh` and the tools are tested against
 stand-ins (fake `pactl`, a test database in the Mixxx schema). Errors on first start are written to `~/.mixxx/mixxx.log`.

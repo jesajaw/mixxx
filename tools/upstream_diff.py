@@ -2,7 +2,7 @@
 """Shows exactly how this repo differs from upstream Mixxx (transparency tool).
 
 Compares against the stable Mixxx branch (default: 2.5):
-  * skins/StudioDeck/        vs  res/skins/LateNight/   (the rename "skins:LateNight" -> "skins:StudioDeck" is
+  * skins/StudioDeck/        vs  res/skins/LateNight/   (the rewrite "skins:LateNight/" -> "skin:" is
                                                           normalized away; generated Studio files are summarized)
   * keyboard/Custom.kbd.cfg  vs  res/keyboard/de_DE.kbd.cfg
 
@@ -32,7 +32,7 @@ def _text(path):
 
 
 def _normalize(text):
-    return text.replace(f"skins:{UPSTREAM_SKIN}", f"skins:{SKIN_NAME}")
+    return text.replace(f"skins:{UPSTREAM_SKIN}/", "skin:")
 
 
 def _files(base):

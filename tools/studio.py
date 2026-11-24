@@ -52,8 +52,15 @@ def probe_rtmidi():
         return False, f"python-rtmidi cannot create a virtual MIDI port: {e}"
 
 
+def read_skin_xml(path):
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
 def doctor_checks(root=ROOT, env=None, which=shutil.which, run=subprocess.run, exists=os.path.exists, probe=probe_rtmidi,
-                  platform=sys.platform, home=None):
+                  platform=sys.platform, home=None, read=read_skin_xml):
     env = os.environ if env is None else env
     checks = []
     add = lambda *a: checks.append(Check(*a))  # noqa: E731
@@ -99,6 +106,12 @@ def doctor_checks(root=ROOT, env=None, which=shutil.which, run=subprocess.run, e
         missing = [f for f in SKIN_FILES + MAPPING_FILES if not exists(data / f)]
         add("skin + mapping", "ok" if not missing else "fail", f"installed in {data}" if not missing else f"missing in {data}: {', '.join(missing)}",
             "" if not missing else "make skin")
+        if not missing and "skins:" + mixxxcfg.SKIN + "/" in read(data / "skins" / mixxxcfg.SKIN / "skin.xml"):
+            add("skin files", "fail", "the installed skin is outdated: it calls itself skins:StudioDeck/, which Mixxx cannot resolve for a "
+                "skin in the user folder (the skin then shows empty, log: 'Could not open template file')",
+                "update this repo, then: make skin")
+        elif not missing:
+            add("skin files", "ok", "up to date")
         cfg = mixxxcfg.read(data)
         skin = cfg.get("Config", {}).get("ResizableSkin")
         add("skin selected", "ok" if skin == mixxxcfg.SKIN else "warn", f"skin is {skin or 'not set yet'}",

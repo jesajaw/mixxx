@@ -4,8 +4,11 @@
 For each skin folder under skins/:
   1. all *.xml files are well-formed
   2. all *.qss files have balanced curly braces
-  3. every fixed reference  skins:<skin>/path/file.ext  (in XML and QSS) exists
+  3. every fixed reference  skin:path/file.ext  (in XML and QSS; "skin:" = the folder of this skin) exists
      (references containing variables like <Variable .../> are skipped)
+  3b. no skin refers to itself as  skins:<ItsName>/...  : Mixxx resolves "skins:" only for the skins that ship with
+     Mixxx (system folder), NOT for a skin in the user's settings folder - the skin then loads empty
+     ("Could not open template file"). Own files must be written as skin:...
   4. every color scheme directory (studio/, palemoon/, classic/) has the same subfolders
 Exit code 1 on errors.
 """
@@ -17,8 +20,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SKINS = ROOT / "skins"
 # Known errors taken straight from Mixxx 2.5.x (LateNight/Classic) - warning only
-KNOWN_UPSTREAM = {"skins:StudioDeck/classic/buttons/btn__undo_active.svg"}
-REF = re.compile(r"skins:([A-Za-z0-9_ ()\-]+)/([^\s\"'<>)]+\.[A-Za-z0-9]+)")
+KNOWN_UPSTREAM = {"skin:classic/buttons/btn__undo_active.svg"}
+REF = re.compile(r"(?<![A-Za-z])skin:([^\s\"'<>)]+\.[A-Za-z0-9]+)")
+SELF_REF = re.compile(r"skins:([A-Za-z0-9_ ()\-]+)/")
 
 
 def main():
@@ -36,15 +40,20 @@ def main():
         for f in list(skin.rglob("*.xml")) + list(skin.rglob("*.qss")):
             text = f.read_text(encoding="utf8", errors="ignore")
             for m in REF.finditer(text):
-                name, rel = m.group(1), m.group(2)
+                rel = m.group(1)
                 if "path/to" in rel:
                     continue
                 checked += 1
-                if not (SKINS / name / rel).exists():
-                    if f"skins:{name}/{rel}" in KNOWN_UPSTREAM:
-                        warnings.append(f"known (upstream): skins:{name}/{rel}")
+                if not (skin / rel).exists():
+                    if f"skin:{rel}" in KNOWN_UPSTREAM:
+                        warnings.append(f"known (upstream): skin:{rel}")
                         continue
-                    errors.append(f"missing file: skins:{name}/{rel}  (in {f.relative_to(ROOT)})")
+                    errors.append(f"missing file: skin:{rel}  (in {f.relative_to(ROOT)})")
+            for m in SELF_REF.finditer(text):
+                if m.group(1) == skin.name:
+                    errors.append(f"{f.relative_to(ROOT)}: refers to itself as skins:{skin.name}/ - Mixxx cannot resolve that for a "
+                                  f"skin in the user folder, write skin: instead")
+                    break
         ref_dirs = [d for d in ("palemoon", "classic", "studio") if (skin / d).is_dir()]
         if "palemoon" in ref_dirs and "studio" in ref_dirs:
             a = {p.relative_to(skin / "palemoon").as_posix() for p in (skin / "palemoon").rglob("*") if p.is_file()}

@@ -130,7 +130,7 @@ class UpstreamDiff(unittest.TestCase):
             up = self._skin(d, "up", {
                 "a.xml": '<x src="skins:LateNight/a.svg"/>', "b.xml": "same", "gone.xml": "x", "c.xml": "old"})
             own = self._skin(d, "own", {
-                "a.xml": '<x src="skins:StudioDeck/a.svg"/>', "b.xml": "same", "c.xml": "new",
+                "a.xml": '<x src="skin:a.svg"/>', "b.xml": "same", "c.xml": "new",
                 "extra.xml": "e", "studio/x.svg": "g", "style_studio.qss": "q"})
             r = upstream_diff.compare_skin(up, own)
         self.assertEqual(r["changed"], ["c.xml"])
@@ -158,3 +158,57 @@ class InstallScriptMessage(unittest.TestCase):
         body = text[text.index("cat <<MSG"):]
         body = body[:body.index("\nMSG")]
         self.assertIsNone(re.search(r"`|\$\(", body), "command substitution inside the heredoc")
+
+
+class ValidateSkin(unittest.TestCase):
+    """tools/validate_skin.py: skin: references must exist, and a skin must not call itself skins:<Name>/ (Mixxx cannot resolve that)."""
+
+    def run_on(self, files):
+        import io
+        from contextlib import redirect_stdout
+
+        import validate_skin
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            skin = root / "skins" / "MySkin"
+            for name, text in files.items():
+                (skin / name).parent.mkdir(parents=True, exist_ok=True)
+                (skin / name).write_text(text, encoding="utf8")
+            old = validate_skin.ROOT, validate_skin.SKINS
+            validate_skin.ROOT, validate_skin.SKINS = root, root / "skins"
+            try:
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    rc = validate_skin.main()
+            finally:
+                validate_skin.ROOT, validate_skin.SKINS = old
+        return rc, out.getvalue()
+
+    def test_existing_skin_references_pass(self):
+        rc, out = self.run_on({"skin.xml": '<Template src="skin:decks/deck.xml"/>', "decks/deck.xml": "<x/>"})
+        self.assertEqual(rc, 0, out)
+        self.assertIn("1 fixed references checked", out)
+
+    def test_missing_target_is_an_error(self):
+        rc, out = self.run_on({"skin.xml": '<Template src="skin:decks/nope.xml"/>'})
+        self.assertEqual(rc, 1)
+        self.assertIn("missing file: skin:decks/nope.xml", out)
+
+    def test_calling_itself_skins_name_is_an_error_with_the_fix_in_the_message(self):
+        rc, out = self.run_on({"skin.xml": '<Template src="skins:MySkin/decks/deck.xml"/>', "decks/deck.xml": "<x/>"})
+        self.assertEqual(rc, 1)
+        self.assertIn("write skin: instead", out)
+
+    def test_system_files_via_skins_prefix_are_fine(self):
+        rc, out = self.run_on({"skin.xml": '<Style src-linux="skins:default-menu-styles-linux.qss"/>'})
+        self.assertEqual(rc, 0, out)
+
+    def test_the_real_skin_has_no_self_references_and_every_skin_reference_exists(self):
+        import io
+        from contextlib import redirect_stdout
+
+        import validate_skin
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(validate_skin.main(), 0)
+        for f in list((ROOT / "skins" / "StudioDeck").rglob("*.xml")) + list((ROOT / "skins" / "StudioDeck").rglob("*.qss")):
+            self.assertNotIn("skins:StudioDeck", f.read_text(encoding="utf8", errors="ignore"), f)

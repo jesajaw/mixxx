@@ -37,12 +37,22 @@ skins/StudioDeck/
   `skin_preview_Studio.png`).
 * PNG assets (VU meters) are not recolored.
 * The skin files belong to Mixxx 2.5.x (currently 2.5.7). To follow a newer 2.5.x release, rebuild `skins/StudioDeck/`
-  from upstream LateNight (copy, rename `skins:LateNight` -> `skins:StudioDeck`, re-apply the `skin.xml` changes that
+  from upstream LateNight (copy, rewrite every `skins:LateNight/` to `skin:` - see the note below -, re-apply the `skin.xml` changes that
   `python3 tools/upstream_diff.py` lists, run `python3 tools/make_scheme.py`). 2.6 is still in beta.
 
 ## What exactly differs from Mixxx?
 
 `python3 tools/upstream_diff.py` clones upstream Mixxx (stable branch 2.5, shallow) and lists every difference. Result for
 this repo: **one changed file** (`skin.xml`: metadata, `show_microphones` = 1, the Studio scheme block) and the generated
-Studio files (`studio/`, `style_studio.qss`). All other skin files are identical to LateNight apart from the renamed
-`skins:LateNight` -> `skins:StudioDeck` paths.
+Studio files (`studio/`, `style_studio.qss`). All other skin files are identical to LateNight apart from the rewritten
+`skins:LateNight/` -> `skin:` paths.
+
+### Why `skin:` and not `skins:StudioDeck/`
+
+Upstream LateNight addresses its own files as `skins:LateNight/...`. Mixxx resolves the prefix `skins:` only for the skins that ship
+with Mixxx (its system folder). For a skin in the user's settings folder (`~/.mixxx/skins`, the Flatpak folder, ...) the same
+written as `skins:StudioDeck/...` is **not found**: the log shows `Could not open template file ".../skins:StudioDeck/decks/deck.xml"`
+and the skin window stays empty. `skin:` means "the folder of the skin that is being loaded" and works anywhere.
+`tools/validate_skin.py` fails if the old form comes back, and `make doctor` detects an outdated installed skin.
+Checked in a real Mixxx 2.4.0 under a virtual display: with `skins:StudioDeck/` 18 template errors and an empty window, with `skin:` none and
+the full skin.

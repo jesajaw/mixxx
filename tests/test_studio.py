@@ -205,6 +205,17 @@ class Doctor(unittest.TestCase):
         self.assertIn("skin.xml", c["skin + mapping"].detail)
         self.assertEqual(c["skin + mapping"].hint, "make skin")
 
+    def test_an_outdated_installed_skin_is_a_failure_with_the_fix(self):
+        for f in S.SKIN_FILES + S.MAPPING_FILES:
+            (self.data / f).parent.mkdir(parents=True, exist_ok=True)
+            (self.data / f).write_text("x")
+        (self.data / "skins" / "StudioDeck" / "skin.xml").write_text('<Template src="skins:StudioDeck/decks/deck.xml"/>')
+        c = self.run_doctor(files=False)
+        self.assertEqual(c["skin files"].status, "fail")
+        self.assertIn("make skin", c["skin files"].hint)
+        (self.data / "skins" / "StudioDeck" / "skin.xml").write_text('<Template src="skin:decks/deck.xml"/>')
+        self.assertEqual(self.run_doctor(files=False)["skin files"].status, "ok")
+
     def test_skin_selection_and_controller_are_warnings_not_failures(self):
         c = self.run_doctor()
         self.assertEqual((c["skin selected"].status, c["controller"].status), ("warn", "warn"))
